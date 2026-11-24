@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>极夜湖心 · 珠峰小屋</title>
+<!-- inline favicon so the browser does not log a 404 for /favicon.ico -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230a141c'/%3E%3Cpath d='M6 21l7-11 5 8 3-4 5 7z' fill='%23cfe3f2'/%3E%3C/svg%3E">
+<meta name="description" content="极夜之下，湖心小岛上的北欧小屋。北窗是珠峰，南窗是远岸灯火。" />
+<style>
+  :root {
+    --ice: #9fd8e8;
+    --warm: #ffb168;
+    --ink: #03070c;
+    --line: rgba(159, 216, 232, 0.22);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden; background: var(--ink);
+    color: #dfeaf2;
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  canvas { touch-action: none; }
+
+  /* ---------- overlays ---------- */
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    background:
+      radial-gradient(ellipse at 50% 46%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.42) 78%, rgba(0,0,0,0.72) 100%);
+  }
+  .grain {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  /* ---------- crosshair ---------- */
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; width: 20px; height: 20px;
+    transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
+    opacity: 0.55; transition: opacity .18s, transform .18s;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: rgba(220, 240, 250, 0.85);
+    box-shadow: 0 0 6px rgba(120, 200, 230, 0.7);
+  }
+  #crosshair::before { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after  { top: 50%; left: 0; height: 1px; width: 100%; transform: translateY(-50%); }
+  #crosshair.active { opacity: 1; transform: translate(-50%, -50%) scale(1.45); }
+  #hoverHint {
+    position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%);
+    z-index: 6; font-size: 12.5px; letter-spacing: .14em; color: #ffe0bb;
+    text-shadow: 0 0 12px rgba(255, 170, 90, .75); pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ---------- HUD ---------- */
+  #ui {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    padding: 26px 30px 24px;
+    transition: opacity .5s ease;
+  }
+  body.hide-ui #ui { opacity: 0; pointer-events: none; }
+
+  .top-left { display: flex; align-items: flex-start; gap: 14px; }
+  .mark {
+    width: 30px; height: 30px; margin-top: 4px; flex: none;
+    border: 1px solid var(--line); border-radius: 50%;
+    display: grid; place-items: center; position: relative;
+  }
+  .mark::after {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ice); box-shadow: 0 0 14px var(--ice);
+    animation: pulse 3.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.85);} 50% { opacity: 1; transform: scale(1.15);} }
+
+  .brand h1 {
+    font-size: 17px; font-weight: 500; letter-spacing: .34em; color: #eaf5fb;
+    text-transform: uppercase;
+  }
+  .brand .cn {
+    margin-top: 5px; font-size: 12.5px; letter-spacing: .3em; color: rgba(190, 218, 234, .62);
+  }
+  .brand .rule {
+    margin-top: 12px; width: 62px; height: 1px;
+    background: linear-gradient(90deg, var(--ice), transparent);
+  }
+  .brand .meta {
+    margin-top: 10px; font-size: 10.5px; letter-spacing: .16em;
+    color: rgba(170, 200, 218, .45); line-height: 1.7;
+  }
+
+  /* ---------- right side panel ---------- */
+  .panel {
+    pointer-events: auto; justify-self: end; align-self: start;
+    width: 244px; padding: 16px 16px 14px;
+    border: 1px solid var(--line); border-radius: 3px;
+    background: linear-gradient(180deg, rgba(6, 14, 22, .68), rgba(4, 9, 15, .5));
+    backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  }
+  .panel h2 {
+    font-size: 10px; font-weight: 500; letter-spacing: .26em;
+    color: rgba(170, 205, 224, .55); text-transform: uppercase;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .panel h2 .dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--warm);
+    box-shadow: 0 0 10px var(--warm);
+  }
+  .spec { margin-top: 12px; display: grid; gap: 9px; }
+  .spec-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .spec-row .k { font-size: 10px; letter-spacing: .13em; color: rgba(160, 190, 210, .48); white-space: nowrap; }
+  .spec-row .v { font-size: 11.5px; color: #d3e6f1; text-align: right; letter-spacing: .03em; }
+  .spec-row .v.warm { color: var(--warm); }
+
+  .panel .sep { height: 1px; background: var(--line); margin: 13px 0 11px; }
+
+  /* ---------- bottom bar ---------- */
+  .bottom {
+    grid-column: 1 / -1; align-self: end;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
+    flex-wrap: wrap;
+  }
+  #chips { display: flex; gap: 7px; flex-wrap: wrap; pointer-events: auto; }
+  .chip {
+    padding: 6px 11px; font-size: 10.5px; letter-spacing: .1em; cursor: pointer;
+    color: rgba(190, 216, 232, .75); background: rgba(8, 18, 28, .55);
+    border: 1px solid rgba(159, 216, 232, .18); border-radius: 2px;
+    transition: all .18s ease; font-family: inherit;
+  }
+  .chip:hover { color: #eaf7ff; border-color: rgba(159, 216, 232, .55); background: rgba(20, 46, 62, .7); }
+
+  .controls { display: flex; gap: 7px; pointer-events: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .tbtn {
+    padding: 7px 12px; font-size: 10.5px; letter-spacing: .1em; cursor: pointer;
+    color: rgba(200, 224, 238, .8); background: rgba(8, 18, 28, .58);
+    border: 1px solid rgba(159, 216, 232, .2); border-radius: 2px;
+    transition: all .18s ease; font-family: inherit; white-space: nowrap;
+  }
+  .tbtn:hover { border-color: rgba(159, 216, 232, .6); color: #f0fbff; }
+  .tbtn.on {
+    color: #1a0e04; background: linear-gradient(180deg, #ffc98c, var(--warm));
+    border-color: transparent; box-shadow: 0 0 18px rgba(255, 170, 90, .4);
+  }
+  .tbtn.ghost { opacity: .62; }
+
+  /* ---------- help ---------- */
+  #helpPanel {
+    position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%) translateY(12px);
+    z-index: 8; width: min(560px, calc(100vw - 40px));
+    padding: 18px 20px; border: 1px solid var(--line); border-radius: 3px;
+    background: rgba(5, 12, 19, .86); backdrop-filter: blur(12px);
+    opacity: 0; pointer-events: none; transition: all .32s ease;
+    font-size: 11.5px; line-height: 1.95; color: rgba(200, 222, 236, .8);
+  }
+  #helpPanel.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  #helpPanel h3 { font-size: 10px; letter-spacing: .26em; color: var(--ice); margin-bottom: 10px; font-weight: 500; }
+  #helpPanel kbd {
+    display: inline-block; min-width: 18px; padding: 1px 5px; margin-right: 3px;
+    border: 1px solid rgba(159, 216, 232, .3); border-radius: 2px;
+    font-family: inherit; font-size: 10px; text-align: center; color: #cfe8f4;
+    background: rgba(30, 60, 80, .4);
+  }
+  .help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; }
+  @media (max-width: 700px) { .help-grid { grid-template-columns: 1fr; } }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 148px; transform: translateX(-50%) translateY(8px);
+    z-index: 7; padding: 8px 18px; font-size: 11.5px; letter-spacing: .12em;
+    color: #ffe4c4; background: rgba(30, 16, 6, .82);
+    border: 1px solid rgba(255, 177, 104, .35); border-radius: 2px;
+    opacity: 0; pointer-events: none; transition: all .28s ease;
+    box-shadow: 0 0 26px rgba(255, 150, 70, .18);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #stat {
+    position: fixed; right: 30px; bottom: 92px; z-index: 5;
+    font-size: 10px; letter-spacing: .18em; color: rgba(150, 185, 205, .32);
+    pointer-events: none;
+  }
+  body.hide-ui #stat { opacity: 0; }
+
+  /* ---------- loader ---------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+    background: radial-gradient(ellipse at 50% 55%, #08131d 0%, #02060a 70%);
+    transition: opacity .9s ease, visibility .9s;
+  }
+  #loader.done { opacity: 0; visibility: hidden; }
+  .load-wrap { text-align: center; }
+  .load-glyph {
+    width: 46px; height: 46px; margin: 0 auto 22px; position: relative;
+  }
+  .load-glyph span {
+    position: absolute; inset: 0; border: 1px solid rgba(159, 216, 232, .5);
+    border-radius: 50%; animation: spin 2.6s linear infinite;
+  }
+  .load-glyph span:nth-child(2) { inset: 8px; border-color: rgba(255, 177, 104, .45); animation-direction: reverse; animation-duration: 1.9s; }
+  .load-glyph span:nth-child(3) { inset: 17px; border-color: rgba(159, 216, 232, .8); animation-duration: 1.3s; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .load-title { font-size: 13px; letter-spacing: .42em; color: #d6eaf5; text-transform: uppercase; }
+  .load-sub { margin-top: 9px; font-size: 10.5px; letter-spacing: .26em; color: rgba(160, 195, 215, .48); }
+  .load-track {
+    margin: 26px auto 0; width: 180px; height: 1px; background: rgba(159, 216, 232, .16);
+    overflow: hidden;
+  }
+  #loadBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--ice), var(--warm)); transition: width .3s ease; }
+
+  /* ---------- mobile hint ---------- */
+  #mobileHint {
+    position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
+    z-index: 6; font-size: 10.5px; letter-spacing: .14em; color: rgba(180, 210, 226, .45);
+    display: none; pointer-events: none;
+  }
+  @media (hover: none) and (pointer: coarse) { #mobileHint { display: block; } }
+
+  @media (max-width: 860px) {
+    #ui { padding: 18px 18px 16px; }
+    .panel { width: 200px; padding: 12px; }
+    .panel .spec { gap: 7px; }
+    #stat { display: none; }
+    .brand .meta { display: none; }
+  }
+  @media (max-width: 620px) {
+    .panel { display: none; }
+    .brand h1 { font-size: 14px; letter-spacing: .26em; }
+    .chip { padding: 5px 8px; font-size: 9.5px; }
+    .tbtn { padding: 6px 9px; font-size: 9.5px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <div id="crosshair"></div>
+  <div id="hoverHint"></div>
+
+  <div id="ui">
+    <div class="top-left">
+      <div class="mark"></div>
+      <div class="brand">
+        <h1>Night Lake</h1>
+        <div class="cn">极夜 · 湖心小屋</div>
+        <div class="rule"></div>
+        <div class="meta">
+          珠穆朗玛 · 北纬 27.99°<br />
+          湖面 · 无风
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <h2><span class="dot"></span>现场记录</h2>
+      <div class="spec">
+        <div class="spec-row"><span class="k">时间</span><span class="v">极夜 02:40</span></div>
+        <div class="spec-row"><span class="k">气温</span><span class="v">−28 °C</span></div>
+        <div class="spec-row"><span class="k">天空</span><span class="v">极光 · 活跃</span></div>
+        <div class="spec-row"><span class="k">湖面</span><span class="v">平静</span></div>
+        <div class="spec-row"><span class="k">北窗</span><span class="v">珠穆朗玛峰</span></div>
+        <div class="spec-row"><span class="k">南窗</span><span class="v">远岸灯火</span></div>
+        <div class="spec-row"><span class="k">卧室</span><span class="v warm" id="specLamp">台灯 关</span></div>
+        <div class="spec-row"><span class="k">客厅</span><span class="v">未点灯</span></div>
+        <div class="spec-row"><span class="k">大门</span><span class="v" id="specDoor">关闭</span></div>
+        <div class="spec-row"><span class="k">音乐</span><span class="v" id="specSound">关</span></div>
+      </div>
+    </aside>
+
+    <div class="bottom">
+      <div id="chips"></div>
+      <div class="controls">
+        <button class="tbtn" id="btnLamp">台灯 关</button>
+        <button class="tbtn" id="btnDoor">门 关</button>
+        <button class="tbtn" id="btnSound">♪ 音乐 关</button>
+        <button class="tbtn ghost" id="btnFly">自由飞行</button>
+        <button class="tbtn ghost" id="btnHelp">操作</button>
+        <button class="tbtn ghost" id="btnHide">隐藏 UI</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="helpPanel">
+    <h3>操作说明</h3>
+    <div class="help-grid">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 行走</div>
+      <div><kbd>Shift</kbd> 快走</div>
+      <div>鼠标拖动 / 点击锁定 环视</div>
+      <div><kbd>空格</kbd> 交互（门 / 台灯）</div>
+      <div><kbd>F</kbd> 开关大门</div>
+      <div><kbd>L</kbd> 开关卧室台灯</div>
+      <div><kbd>M</kbd> 开关音乐</div>
+      <div><kbd>H</kbd> 隐藏 / 显示界面</div>
+      <div><kbd>Q</kbd><kbd>E</kbd> 飞行模式升降</div>
+      <div>右下按钮可切换机位</div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <div id="stat"></div>
+  <div id="mobileHint">单指拖动环视 · 空格键交互</div>
+
+  <div id="loader">
+    <div class="load-wrap">
+      <div class="load-glyph"><span></span><span></span><span></span></div>
+      <div class="load-title">Night Lake</div>
+      <div class="load-sub">正在结成冰湖与极光</div>
+      <div class="load-track"><div id="loadBar"></div></div>
+    </div>
+  </div>
+
+  <script type="module" src="./dist/app.js"></script>
+</body>
+</html>
